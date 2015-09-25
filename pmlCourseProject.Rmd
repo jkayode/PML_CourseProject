@@ -1,0 +1,126 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Kayode J.O."
+date: "18 September 2015"
+output: html_document
+---
+
+## Introduction
+
+This report is produced as a Course Project of [Practical Machine Learning](https://class.coursera.org/predmachlearn-032), a part of the [Datascience Specialization](https://www.coursera.org/specialization/jhudatascience/1?utm_medium=catalog) offered by [Johns Hopkins University](https://www.jhu.edu/) on [Coursera](https://www.coursera.org/jhu).
+
+It reports procedure for using data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to make predictions about personal activity. Although people regularly quantify how much of a particular activity they do, they rarely quantify how well they do it. This project however attempts to predict the manner in which activity is performed. 
+
+The report will attempt to describe how the prediction model was built, how cross validation was used, what the expected out of sample error is, and the various choices made. The prediction model developed will be used to predict 20 different test cases. 
+
+## Data Sources
+
+The [training data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and [test data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) for this project are sourced from [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har.).
+
+The "classe" variable in the training set is the outcome while any of the other variables will be used as predictors.
+
+## Loading and preprocessing the data
+First step is to set the working directory, load required libraries as well as the training and test datasets as shown below.
+```{r setDir, echo=FALSE}
+# Set Working Directory
+wd <- "C:/Users/user/datasciencecoursera/Practical Machine Learning/PML Course Project"
+setwd(wd)
+```
+
+
+```{r loadData, message=FALSE}
+# Set Working Directory
+# Load Required Libraries
+library(caret)
+library(randomForest)
+
+# Specify URLs for training and test datasets
+trainURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+# Check if data has been previously downloaded, otherwise download
+if(!file.exists("./data/trainData.csv")){
+        dir.create("./data")
+        download.file(url=trainURL, destfile="./data/trainData.csv" )}
+if(!file.exists("./data/testData.csv")){
+        download.file(url=testURL, destfile="./data/testData.csv")}
+
+```
+
+Read the training and test datasets
+```{r readData, cache=TRUE}
+# Read datasets
+trainData <- read.csv("./data/trainData.csv", na.strings = c("NA", "")) # Training
+testData <- read.csv("./data/testData.csv", na.strings = c("NA", "")) # Test
+
+# View the dimensions of the datasets
+dim(trainData) # Training
+dim(testData) # Test
+```
+
+Cleaning the training dataset to remove variables that are mostly NA, have near zero variance or are unlikely to make important contributions to the prediction such as username, timestamp, etc.
+```{r cleanData, cache=TRUE}
+# Remove mostly NA Variables
+naVar <- sapply(trainData, function(x) mean(is.na(x))) > 0.95
+trainData <- trainData[, naVar == FALSE]
+
+# Remove Variables with Near Zero Variance 
+nzv <- nearZeroVar(trainData)
+trainData <- trainData[, -nzv]
+
+# Remove Variable that are merely labels (basically first 5 columns)
+trainData <- trainData[, -(1:5)]
+
+dim(trainData) # Cleaned training dataset
+```
+
+## Prediction Modeling
+
+I choose to use Random Forest Model for training my prediction model. This choice is informed by the reliability of technique in features selection and the ability of Random forests to correct for decision trees' habit of overfitting to their training set [1](https://en.wikipedia.org/wiki/Random_forest). 
+
+The train function is instructed to use 4-fold cross validation to select features to properly tune the final model in order to appropriately estimate the out-of-sample error for the final model. The training dataset is also split to two datasets, one for training and the other for validation of the final model as shown below.
+
+```{r spltData, cache=TRUE}
+set.seed(3234) # Set seed for reproducibility
+inTrain <- createDataPartition(y=trainData$classe, p=0.6, list = FALSE) # Create data partition
+training <- trainData[inTrain, ] # Training dataset
+vtraining <- trainData[-inTrain, ] # My Testing dataset
+
+# Set parameters for controlling the number cross validations in the train function
+cvControl <- trainControl(method = "cv", number = 4)
+
+# Model selection with random forest method passed to train function
+modelFit <- train(classe ~ ., data=training, method="rf", trControl=cvControl)
+
+modelFit
+```
+
+To validate the performance of the model by testing it on the vtraining dataset as shown:
+
+```{r valtrain}
+confusionMatrix(vtraining$classe, predict(modelFit, vtraining))
+```
+
+The Accuracy of the model is 0.9976 while the out-of-sample error is `r 1-0.9976`. This implies that the model should be acceptable to correctly predict our outcome variable considering a sample size of 20 in our test set.
+
+
+To predict test set for Prediction Assignment Submission
+```{r testPred}
+answers <- predict(modelFit, testData) # Predict for test data
+
+# Function to create text file for each prediction
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+# Write each prediction to a text file for submission
+pml_write_files(answers)
+
+# View predictions
+answers
+```
+
